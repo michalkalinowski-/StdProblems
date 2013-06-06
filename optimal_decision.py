@@ -1,6 +1,32 @@
+# F O X E S   A N D   H E N S
+# Example of defining an optimal strategy when playing a game based on a random event
+# -----------------------------------------------------------------------------------
+# This code is derived from one of the homeworks I completed for Peter Norvig's
+# *Design of Computer Programs* class on Udacity.com
+# Some utility functions provided by Peter Norvig
+#
+# Problem description:
+# --------------------
+# You play a game of Foxes and Hens. Threre is a deck consisting of cards of two different
+# kinds: foxes and hens. They're shuffled randomly, but you know how many foxes and hens there
+# are. If you draw a Hen you add it to the "yard"(score pending). If you draw a Fox it eats all
+# the Hens from the yard (resets pending score). You can decide to collect the hens from the yard
+# at any point (you add pending score to your score) but you discard the next card from the deck.
+# The goal is to score as many hens as possible.
+#
+# Solution:
+# ---------
+# This is a classic *decision under uncertainity* problem so game theory approach is used.
+# State consists of number of points, points pending and a collection of cards remaining.
+# Function of the Utility of the state is defined recursivly in terms of Quality of actions
+# [wait, gather] you can take to advance to the next state. Goal is to arrive to the state
+# with max score based on the probability of drawing a Fox.
+
+# Imports
 from functools import update_wrapper
 import random
 
+# Simple Cashing
 def decorator(d):
     "Make function d a decorator: d wraps a function fn."
     def _d(fn):
@@ -25,7 +51,19 @@ def memo(f):
     _f.cache = cache
     return _f
 
-def foxes_and_hens(strategy, foxes=7, hens=45):
+# Utilities
+def pop_card(cards):
+    """ draw a card and remove it from the deck 
+        possible choices for kind are random, H, F """
+    card = random.choice(cards)
+    cards = cards.replace(card, "", 1)
+    return card, cards
+
+# defines
+n_foxes = 7
+n_hens = 45
+
+def foxes_and_hens(strategy, foxes=n_foxes, hens=n_hens):
     """Play the game of foxes and hens."""
     # A state is a tuple of (score-so-far, number-of-hens-in-yard, deck-of-cards)
     state = (score, yard, cards) = (0, 0, 'F'*foxes + 'H'*hens)
@@ -45,35 +83,17 @@ def do(action, state):
     else:
         raise ValueError('Wrong action')
     
-def take5(state):
-    "A strategy that waits until there are 5 hens in yard, then gathers."
-    (score, yard, cards) = state
-    if yard < 5:
-        return 'wait'
-    else:
-        return 'gather'
-
+# Evaluation of the strategy
 def average_score(strategy, N=1000):
     return sum(foxes_and_hens(strategy) for _ in range(N)) / float(N)
 
-def superior(A, B=take5):
-    "Does strategy A have a higher average score than B, by more than 1.5 point?"
-    return average_score(A) - average_score(B) > 1.5
 
-def hens_actions(state):
-    """ return a touple of actions possible to execute. When there are no
-        hens it's stupid to gather"""
-    _, yard, _ = state
-    return ('wait', 'gather') if yard else ('wait')        
-
-def p_fox(state):
-    """ Compute probability of drawing a fox given a deck of cards"""
-    _, _, cards = state
-    return cards.count('F')/float(cards.count('H')+cards.count('F')) if cards.count('H') else 1 
-    # make sure no division by 0 will take place
+# Optimal Solution:
+# ----------------
 
 def strategy(state):
     """ My ultimate-optimal strategy function """
+    # define Expected Utility as quality of performing an action on a state
     def EU(action): return Q(state, action)
     return max(['wait', 'gather'], key=EU)
 
@@ -84,7 +104,7 @@ def U(state):
     if not len(cards):
         return score + yard
     else:
-        return max(Q(state, action, U) for action in ['wait', 'gather'])
+        return max(Q(state, action, U) for action in hens_actions(state))
 
 def Q(state, action, fU=U):
     """ Returns quality for a given action """
@@ -99,14 +119,27 @@ def Q(state, action, fU=U):
     else:
         raise ValueError
     
-def pop_card(cards):
-    """ draw a card and remove it from the deck 
-        possible choices for kind are random, H, F """
-    card = random.choice(cards)
-    cards = cards.replace(card, "", 1)
-    return card, cards
+def p_fox(state):
+    """ Compute probability of drawing a fox given a deck of cards"""
+    _, _, cards = state
+    return cards.count('F')/float(cards.count('H')+cards.count('F')) if cards.count('H') else 1 
+    # make sure no division by 0 will take place
 
-def test():
+def hens_actions(state):
+    """ return a touple of actions possible to execute. When there are no
+        hens it's useless to gather"""
+    _, yard, _ = state
+    return ['wait', 'gather'] if yard else ['wait']        
+
+# Testing results
+def tests():
+    error = 0.001
+    assert (p_fox((0, 0, 'FFHH')) - 0.5) <= error
+    assert (p_fox((0, 0, 'FFFHH')) - 0.75) <= error
+    assert set(hens_actions((0, 0,'FFHH'))) == set(('wait'))
+    assert set(hens_actions((0, 1,'FFHH'))) == set(('wait', 'gather'))
+
+    # tests below by Peter Norvig, thanks!
     gather = do('gather', (4, 5, 'F'*4 + 'H'*10))
     assert (gather == (9, 0, 'F'*3 + 'H'*10) or 
             gather == (9, 0, 'F'*4 + 'H'*9))
@@ -114,18 +147,8 @@ def test():
     wait = do('wait', (10, 3, 'FFHH'))
     assert (wait == (10, 4, 'FFH') or
             wait == (10, 0, 'FHH'))
-    
-    assert superior(strategy)
-    return 'tests pass'
 
-def test2():
-    error = 0.001
-    assert (p_fox((0, 0, 'FFHH')) - 0.5) <= error
-    assert (p_fox((0, 0, 'FFFHH')) - 0.75) <= error
-    assert set(hens_actions((0, 0,'FFHH'))) == set(('wait'))
-    assert set(hens_actions((0, 1,'FFHH'))) == set(('wait', 'gather'))
-    print "Hens gathered:", average_score(strategy)
-    return "Tests Pass"
-    
-
-print test2() 
+# Print some stuff:
+print "Gathered", average_score(strategy), "/", n_hens, "Hens on average"
+print "Game played thousand times"
+print "Yay!"
